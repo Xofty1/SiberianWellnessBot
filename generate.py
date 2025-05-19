@@ -1,5 +1,6 @@
 from openai import AsyncOpenAI, OpenAI
 from config import AI_TOKEN
+from system_prompt import get_system_prompt
 
 # Создаем клиента с минимальными параметрами, чтобы избежать ошибки
 # client = AsyncOpenAI(
@@ -12,14 +13,16 @@ client = AsyncOpenAI(
     base_url="https://openrouter.ai/api/v1"
 )
 
-async def ai_generate(text: str, context: str = None):
+async def ai_generate(text: str, context: str = None, system_prompt_type: str = "default"):
     messages = []
     
+    # Добавляем системный промпт
+    messages.append({
+        "role": "system",
+        "content": get_system_prompt(system_prompt_type)
+    })
+    
     if context:
-        messages.append({
-            "role": "system",
-            "content": "Вы - полезный ассистент, который отвечает на вопросы на основе предоставленного контекста. Отвечайте точно и информативно."
-        })
         messages.append({
             "role": "user",
             "content": f"Контекст: {context}\n\nВопрос: {text}"
@@ -44,10 +47,10 @@ async def ai_generate(text: str, context: str = None):
         # Запасной вариант для ответа, если API недоступен
         return "Извините, в данный момент я не могу сгенерировать ответ. Попробуйте позже."
 
-async def ask_gpt(prompt: str, context: str = None):
-    """Отправляет запрос в ChatGPT с возможностью добавления контекста."""
+async def ask_gpt(prompt: str, context: str = None, system_prompt_type: str = "default"):
+    """Отправляет запрос в ChatGPT с возможностью добавления контекста и системного промпта."""
     try:
-        response = await ai_generate(prompt, context)
+        response = await ai_generate(prompt, context, system_prompt_type)
         return response.strip()
     except Exception as e:
         return f"Произошла ошибка при генерации ответа: {str(e)}"
