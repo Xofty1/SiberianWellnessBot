@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.types import Message, Document, PhotoSize
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import os
@@ -9,6 +9,7 @@ import aiohttp
 from bs4 import BeautifulSoup
 import re
 import json
+from datetime import datetime
 
 from generate import ask_gpt
 from document_processor import DocumentProcessor
@@ -22,15 +23,6 @@ data_loader = None
 # Указываем сайт для поиска
 SEARCH_SITE = "ru.siberianhealth.com/ru/"
 
-# Заголовки для имитации браузера
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-}
-
 # Инициализация data_loader отложена до запуска бота
 async def init_data_loader():
     global data_loader
@@ -42,9 +34,12 @@ class Gen(StatesGroup):
     wait = State()
     context = State()
 
+class AddInfo(StatesGroup):
+    waiting_for_info = State()
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
-    await message.answer('Добро пожаловать! Я бот, обученный на специальных данных. Задайте мне вопрос, и я постараюсь на него ответить.')
+    await message.answer('Добро пожаловать! Я тут для того, чтобы помочь разобраться в компании Siberian Wellenss, ответить на вопросы о здоровье и рассказать о том как построить бизнес. Можешь задавать свои вопросы! Будем разбираться!')
 
 @router.message(Gen.wait)
 async def stop_flood(message: Message):
@@ -108,77 +103,40 @@ async def handle_context_question(message: Message, state: FSMContext):
     # Combine context with question
     prompt = f"Контекст: {context}\n\nВопрос: {message.text}"
     response = await ask_gpt(prompt)
-    await message.answer(response)
+    await message.answer(response, parse_mode="Markdown")
     await state.clear()
 
-async def search_web(query: str) -> str:
-    """Поиск информации на сайте Siberian Health"""
-    async with aiohttp.ClientSession() as session:
-        try:
-            # Формируем URL для поиска
-            search_url = f"https://{SEARCH_SITE}search/?q={query}"
-            
-            async with session.get(search_url, headers=HEADERS) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    results = []
-                    
-                    # Ищем результаты поиска
-                    search_results = soup.find_all('div', class_='search-result-item')
-                    
-                    if not search_results:
-                        # Если не нашли результаты в стандартном формате, ищем любые релевантные блоки
-                        search_results = soup.find_all(['div', 'article'], class_=lambda x: x and ('product' in x.lower() or 'article' in x.lower() or 'content' in x.lower()))
-                    
-                    for result in search_results[:3]:  # Берем первые 3 результата
-                        # Извлекаем заголовок
-                        title = result.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'div'], class_=lambda x: x and ('title' in x.lower() or 'name' in x.lower()))
-                        if not title:
-                            title = result.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a'])
-                        
-                        # Извлекаем описание
-                        description = result.find(['p', 'div'], class_=lambda x: x and ('description' in x.lower() or 'text' in x.lower() or 'content' in x.lower()))
-                        if not description:
-                            description = result.find(['p', 'div'])
-                        
-                        # Извлекаем ссылку
-                        link = result.find('a')
-                        
-                        result_text = ""
-                        if title:
-                            result_text += f"Заголовок: {title.get_text(strip=True)}\n"
-                        if link and link.get('href'):
-                            result_text += f"Ссылка: {link['href']}\n"
-                        if description:
-                            result_text += f"Описание: {description.get_text(strip=True)}\n"
-                        
-                        if result_text:
-                            results.append(result_text)
-                    
-                    if results:
-                        return "\n\n".join(results)
-                    
-                    # Если не нашли результатов в поиске, пробуем получить главную страницу
-                    main_url = f"https://{SEARCH_SITE}"
-                    async with session.get(main_url, headers=HEADERS) as main_response:
-                        if main_response.status == 200:
-                            main_html = await main_response.text()
-                            main_soup = BeautifulSoup(main_html, 'html.parser')
-                            
-                            # Ищем релевантный контент на главной странице
-                            content = main_soup.find_all(['div', 'article', 'section'], class_=lambda x: x and ('content' in x.lower() or 'main' in x.lower()))
-                            
-                            if content:
-                                return f"Найдена информация на главной странице:\n{content[0].get_text(strip=True)[:500]}..."
-                    
-                    return "Не удалось найти информацию на сайте."
-                else:
-                    return f"Ошибка доступа к сайту. Статус: {response.status}"
-        except Exception as e:
-            return f"Произошла ошибка при поиске: {str(e)}"
+@router.message(Command("addinfo"))
+async def cmd_addinfo(message: Message, state: FSMContext):
+    await message.answer("Отправьте информацию, которую должен знать бот. Мы проверим её и добавим.")
+    await state.set_state(AddInfo.waiting_for_info)
 
-@router.message()
+@router.message(AddInfo.waiting_for_info)
+async def handle_new_info(message: Message, state: FSMContext):
+    # Здесь можно добавить логику для проверки и сохранения информации
+    # Например, сохранить в текстовый файл в директории training_data/text/
+    info_text = message.text
+    
+    # Создаем директорию, если её нет
+    text_dir = os.path.join("training_data", "text")
+    os.makedirs(text_dir, exist_ok=True)
+    
+    # Генерируем уникальное имя файла на основе timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"user_info_{timestamp}.txt"
+    file_path = os.path.join(text_dir, filename)
+    
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(info_text)
+        
+        await message.answer("Спасибо! Ваша информация получена и будет проверена администратором.")
+    except Exception as e:
+        await message.answer(f"Произошла ошибка при сохранении информации: {str(e)}")
+    
+    await state.clear()
+
+@router.message(F.text)  # Добавляем фильтр для текстовых сообщений
 async def handle_message(message: Message, state: FSMContext):
     global data_loader
     
@@ -188,7 +146,7 @@ async def handle_message(message: Message, state: FSMContext):
         try:
             data_loader = await init_data_loader()
         except Exception as e:
-            await message.answer(f'Ошибка загрузки базы знаний: {str(e)}')
+            await message.answer(f'Ошибка загрузки базы знаний: {str(e)}, parse_mode="Markdown"')
             return
     
     await state.set_state(Gen.wait)
@@ -201,17 +159,10 @@ async def handle_message(message: Message, state: FSMContext):
             # Если найдена релевантная информация, используем ее
             response = await ask_gpt(message.text, relevant_context, "siberian_health")
         else:
-            # Если нет релевантной информации, ищем на указанном сайте
-            web_results = await search_web(message.text)
-            if web_results and "Не удалось найти информацию" not in web_results:
-                # Используем результаты поиска как контекст
-                response = await ask_gpt(message.text, web_results, "siberian_health")
-            else:
-                # Если поиск не дал результатов, просто отвечаем на вопрос
-                response = await ask_gpt(message.text, system_prompt_type="siberian_health")
+            response = await ask_gpt(message.text, system_prompt_type="siberian_health")
         
-        await message.answer(response)
+        await message.answer(response, parse_mode="Markdown")
     except Exception as e:
-        await message.answer(f'Произошла ошибка: {str(e)}')
+        await message.answer(f'Произошла ошибка: {str(e)}', parse_mode="Markdown")
     finally:
         await state.clear()
