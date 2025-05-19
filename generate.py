@@ -1,7 +1,12 @@
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from config import AI_TOKEN
 
 # Создаем клиента с минимальными параметрами, чтобы избежать ошибки
+# client = AsyncOpenAI(
+#     api_key=AI_TOKEN,
+#     base_url="https://openrouter.ai/api/v1"
+# )
+
 client = AsyncOpenAI(
     api_key=AI_TOKEN,
     base_url="https://openrouter.ai/api/v1"
@@ -13,7 +18,7 @@ async def ai_generate(text: str, context: str = None):
     if context:
         messages.append({
             "role": "system",
-            "content": "Вы - полезный ассистент, который отвечает на вопросы на основе предоставленного контекста. Отвечайте точно и информативно."
+            "content": "Вы - полезный ассистент, который отвечает на вопросы на основе предоставленного контекста. Отвечайте точно и информативно. Используйте форматирование Markdown V2 для Telegram: *жирный текст*, _курсив_, `код`, [ссылка](url). Не используйте точки и другие специальные символы в форматированном тексте, так как они будут экранированы автоматически."
         })
         messages.append({
             "role": "user",
@@ -27,7 +32,7 @@ async def ai_generate(text: str, context: str = None):
     
     try:
         completion = await client.chat.completions.create(
-            model="deepseek/deepseek-chat",
+            model="meta-llama/llama-3.3-8b-instruct:free",
             messages=messages,
             temperature=0.7,
             max_tokens=2000
