@@ -3,7 +3,6 @@ from aiogram.types import Message, Document, PhotoSize
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.enums import ParseMode
 import os
 import tempfile
 
@@ -84,13 +83,6 @@ async def handle_photo(message: Message, state: FSMContext):
             await message.answer("Не удалось обработать изображение. Пожалуйста, попробуйте другое изображение.")
             await state.clear()
 
-def escape_markdown(text: str) -> str:
-    """Экранирует специальные символы для Markdown V2."""
-    special_chars = ['_', '*', '[', ']', '(', ')', '`', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
-
 @router.message(Gen.context)
 async def handle_context_question(message: Message, state: FSMContext):
     await state.set_state(Gen.wait)
@@ -100,8 +92,7 @@ async def handle_context_question(message: Message, state: FSMContext):
     # Combine context with question
     prompt = f"Контекст: {context}\n\nВопрос: {message.text}"
     response = await ask_gpt(prompt)
-    escaped_response = escape_markdown(response)
-    await message.answer(escaped_response, parse_mode=ParseMode.MARKDOWN_V2)
+    await message.answer(response)
     await state.clear()
 
 @router.message()
@@ -130,8 +121,7 @@ async def handle_message(message: Message, state: FSMContext):
             # Если нет релевантной информации, просто отвечаем на вопрос
             response = await ask_gpt(message.text)
         
-        escaped_response = escape_markdown(response)
-        await message.answer(escaped_response, parse_mode=ParseMode.MARKDOWN_V2)
+        await message.answer(response)
     except Exception as e:
         await message.answer(f'Произошла ошибка: {str(e)}')
     finally:
